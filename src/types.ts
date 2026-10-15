@@ -9,6 +9,17 @@ export type Listing = {
   condition: string;
   image: string;
   description?: string;
+  isSold?: boolean;
 };
 
-export type Tab = "Explore" | "Saved" | "Messages" | "Profile" | "MyListings";
+export type UserRole = "student" | "admin";
+
+export type MockUser = {
+  id: string;
+  name: string;
+  email: string;
+  campus: string;
+  role: UserRole;
+};
+
+export type Tab = "Explore" | "Saved" | "Messages" | "Profile" | "MyListings" | "AdminPanel" | "StudentPanel";
