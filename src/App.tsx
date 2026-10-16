@@ -329,17 +329,13 @@ export default function App() {
 
     setItems((prev) => [newListing, ...prev]);
 
-    if (db && user) {
-      try {
-        await addDoc(collection(db, "listings"), {
-          ...newListing,
-          createdAt: serverTimestamp(),
-        });
-      } catch (e) {
-        console.warn("Firestore save fallback", e);
-      }
-    }
+    // Reset search query, category, and price filters so the new listing is immediately visible at the top!
+    setQueryText("");
+    setCategory("All items");
+    setPriceRange("all");
 
+    // Automatically navigate to Explore tab
+    setTab("Explore");
     setSellOpen(false);
   };
 
@@ -703,6 +699,28 @@ function SellModal({
             placeholder="0"
             style={styles.field}
           />
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.catPicker}>
+            {["Textbooks", "Tech", "Furniture", "Fashion"].map((cat) => (
+              <Pressable
+                key={cat}
+                style={[
+                  styles.catOption,
+                  category === cat && styles.activeCatOption,
+                ]}
+                onPress={() => setCategory(cat)}
+              >
+                <Text
+                  style={[
+                    styles.catOptionText,
+                    category === cat && styles.activeCatOptionText,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <Pressable
             disabled={!title || !price}
             style={[styles.primary, (!title || !price) && styles.disabled]}
@@ -921,4 +939,31 @@ const styles = StyleSheet.create({
     color: "#173C34",
   },
   disabled: { opacity: 0.45 },
+  catPicker: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  catOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: "#ECEFE9",
+    borderWidth: 1,
+    borderColor: "#E2E7DF",
+  },
+  activeCatOption: {
+    backgroundColor: "#1F5D4C",
+    borderColor: "#1F5D4C",
+  },
+  catOptionText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64736C",
+  },
+  activeCatOptionText: {
+    color: "#FFF",
+  },
 });
