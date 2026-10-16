@@ -21,7 +21,7 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -35,15 +35,42 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { EmptyState } from "./components/EmptyState";
+import { LoginModal } from "./components/LoginModal";
+import { PriceRange } from "./components/PriceFilter";
+import { seedListings } from "./data";
+import { auth, db, firebaseConfigured } from "./firebase";
+import { AdminPanelPage } from "./pages/AdminPanelPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { MessagesPage } from "./pages/MessagesPage";
 import { MyListingsPage } from "./pages/MyListingsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SavedPage } from "./pages/SavedPage";
-import { seedListings } from "./data";
-import { auth, db, firebaseConfigured } from "./firebase";
-import { Listing, Tab } from "./types";
+import { StudentPanelPage } from "./pages/StudentPanelPage";
+import { Listing, MockUser, Tab } from "./types";
+
+const initialStudents: MockUser[] = [
+  {
+    id: "s_1",
+    name: "Chamudika Sandharuwan",
+    email: "chamudika@campus.edu",
+    campus: "North Campus",
+    role: "student",
+  },
+  {
+    id: "s_2",
+    name: "Virunaka Dewmin",
+    email: "virunaka@campus.edu",
+    campus: "West Village",
+    role: "student",
+  },
+  {
+    id: "s_3",
+    name: "Samantha K.",
+    email: "samantha@campus.edu",
+    campus: "East Quad",
+    role: "student",
+  },
+];
 
 async function registerUser(user: User) {
   if (!db) return;
@@ -64,11 +91,21 @@ async function registerUser(user: User) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("Explore");
-  const [items, setItems] = useState(seedListings);
+  const [items, setItems] = useState<Listing[]>(seedListings);
   const [queryText, setQueryText] = useState("");
   const [category, setCategory] = useState("All items");
+  const [priceRange, setPriceRange] = useState<PriceRange>("all");
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<Listing | null>(null);
+
+  // Role and Mock User State
+  const [students, setStudents] = useState<MockUser[]>(initialStudents);
+  const [currentUser, setCurrentUser] = useState<MockUser | null>(
+    initialStudents[0],
+  );
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+
+  // Firebase Auth state
   const [user, setUser] = useState<User | null>(auth?.currentUser || null);
   const [authOpen, setAuthOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
@@ -131,25 +168,112 @@ export default function App() {
     );
   }, []);
 
-  const filteredItems = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          (category === "All items" || item.category === category) &&
-          item.title.toLowerCase().includes(queryText.toLowerCase()),
-      ),
-    [category, items, queryText],
-  );
-  const myListings = useMemo(
-    () => (user ? items.filter((item) => item.sellerId === user.uid) : []),
-    [items, user],
-  );
+  // Filter items by category, query, and price range
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const matchesCategory =
+        category === "All items" || item.category === category;
+      const matchesQuery = item.title
+        .toLowerCase()
+        .includes(queryText.toLowerCase());
+
+      let matchesPrice = true;
+      if (priceRange === "under30") {
+        matchesPrice = item.price < 30;
+      } else if (priceRange === "30to70") {
+        matchesPrice = item.price >= 30 && item.price <= 70;
+      } else if (priceRange === "over70") {
+        matchesPrice = item.price > 70;
+      }
+
+      return matchesCategory && matchesQuery && matchesPrice;
+    });
+  }, [category, items, priceRange, queryText]);
+
+  const myListings = useMemo(() => {
+    const activeName = currentUser?.name || user?.displayName || "You";
+    return items.filter(
+      (item) =>
+        item.seller === activeName ||
+        (user && item.sellerId === user.uid) ||
+        (currentUser && item.sellerId === currentUser.id),
+    );
+  }, [items, user, currentUser]);
+
   const toggleSaved = (id: string) =>
     setSavedIds((current) =>
       current.includes(id)
         ? current.filter((value) => value !== id)
         : [...current, id],
     );
+
+  // Toggle "Mark as Sold" feature
+  const toggleSold = (id: string) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, isSold: !item.isSold } : item,
+      ),
+    );
+    setSelected((prev) => (prev && prev.id === id ? { ...prev, isSold: !prev.isSold } : prev));
+  };
+
+  // Role login handlers
+  const handleRoleLogin = (mockUser: MockUser) => {
+    setCurrentUser(mockUser);
+    setLoginModalOpen(false);
+    if (mockUser.role === "admin") {
+      setTab("AdminPanel");
+    } else {
+      setTab("StudentPanel");
+    }
+  };
+
+  const handleSignOutRole = () => {
+    setCurrentUser(null);
+    setLoginModalOpen(true);
+  };
+
+  // Admin Dashboard actions
+  const handleAdminAddListing = (title: string, price: number, cat: string) => {
+    const newListing: Listing = {
+      id: "admin_" + Date.now(),
+      title,
+      price,
+      category: cat,
+      seller: currentUser?.name || "Campus Administrator",
+      sellerId: currentUser?.id || "admin_1",
+      campus: "Admin Office",
+      condition: "Brand new",
+      image: seedListings[0].image,
+      description: "Official listing posted by campus administration.",
+      isSold: false,
+    };
+    setItems((prev) => [newListing, ...prev]);
+  };
+
+  const handleAdminDeleteListing = (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleAdminRegisterStudent = (
+    name: string,
+    email: string,
+    campus: string,
+  ) => {
+    const newStudent: MockUser = {
+      id: "s_" + Date.now(),
+      name,
+      email,
+      campus,
+      role: "student",
+    };
+    setStudents((prev) => [newStudent, ...prev]);
+  };
+
+  const handleAdminDeleteStudent = (id: string) => {
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+  };
+
   const signInWithGoogle = async () => {
     if (!auth) return;
     setAuthError("");
@@ -179,35 +303,47 @@ export default function App() {
       Alert.alert("Google sign-in failed", code);
     }
   };
+
   const publish = async (
     title: string,
     price: string,
     listingCategory: string,
   ) => {
-    if (!user) {
-      setSellOpen(false);
-      setAuthOpen(true);
-      return;
-    }
-    await addDoc(collection(db!, "listings"), {
+    const activeSellerName =
+      currentUser?.name || user?.displayName || user?.email || "Campus Student";
+    const activeSellerId = currentUser?.id || user?.uid || "mock_seller";
+
+    const newListing: Listing = {
+      id: "lst_" + Date.now(),
       title,
-      price: Number(price),
+      price: Number(price) || 0,
       category: listingCategory,
-      seller: user.displayName || user.email || "You",
-      sellerId: user.uid,
-      campus: "North Campus",
+      seller: activeSellerName,
+      sellerId: activeSellerId,
+      campus: currentUser?.campus || "North Campus",
       condition: "Good condition",
       image: seedListings[0].image,
       description: "New listing from a campus seller.",
-      createdAt: serverTimestamp(),
-    });
+      isSold: false,
+    };
+
+    setItems((prev) => [newListing, ...prev]);
+
+    if (db && user) {
+      try {
+        await addDoc(collection(db, "listings"), {
+          ...newListing,
+          createdAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn("Firestore save fallback", e);
+      }
+    }
+
     setSellOpen(false);
   };
+
   const contactSeller = () => {
-    if (!user) {
-      setAuthOpen(true);
-      return;
-    }
     setSelected(null);
     setTab("Messages");
   };
@@ -215,19 +351,25 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
+
       {tab === "Explore" && (
         <ExplorePage
           items={filteredItems}
           query={queryText}
           category={category}
+          priceRange={priceRange}
           savedIds={savedIds}
+          currentUser={currentUser}
           onQueryChange={setQueryText}
           onCategoryChange={setCategory}
+          onPriceRangeChange={setPriceRange}
           onSave={toggleSaved}
           onOpen={setSelected}
           onProfile={() => setTab("Profile")}
+          onOpenRoleSwitch={() => setLoginModalOpen(true)}
         />
       )}
+
       {tab === "Saved" && (
         <SavedPage
           items={items.filter((item) => savedIds.includes(item.id))}
@@ -235,9 +377,11 @@ export default function App() {
           onOpen={setSelected}
         />
       )}
+
       {tab === "Messages" && (
         <MessagesPage onBrowse={() => setTab("Explore")} />
       )}
+
       {tab === "MyListings" && (
         <MyListingsPage
           items={myListings}
@@ -245,6 +389,27 @@ export default function App() {
           onSell={() => setSellOpen(true)}
         />
       )}
+
+      {tab === "StudentPanel" && (
+        <StudentPanelPage
+          user={currentUser || initialStudents[0]}
+          listingCount={myListings.length}
+          onGoToSell={() => setSellOpen(true)}
+          onSignOut={handleSignOutRole}
+        />
+      )}
+
+      {tab === "AdminPanel" && (
+        <AdminPanelPage
+          listings={items}
+          students={students}
+          onAddListing={handleAdminAddListing}
+          onDeleteListing={handleAdminDeleteListing}
+          onRegisterStudent={handleAdminRegisterStudent}
+          onDeleteStudent={handleAdminDeleteStudent}
+        />
+      )}
+
       {tab === "Profile" && (
         <ProfilePage
           user={user}
@@ -253,30 +418,46 @@ export default function App() {
           firebaseConfigured={firebaseConfigured}
           profileReady={profileReady}
           error={authError}
-          onMyListings={() => (user ? setTab("MyListings") : setAuthOpen(true))}
+          onMyListings={() => setTab("MyListings")}
           onSaved={() => setTab("Saved")}
-          onSignIn={() => setAuthOpen(true)}
-          onSignOut={() => auth && signOut(auth)}
+          onSignIn={() => setLoginModalOpen(true)}
+          onSignOut={() => {
+            if (auth) signOut(auth);
+            setCurrentUser(null);
+          }}
         />
       )}
+
       <BottomNav
         tab={tab}
         savedCount={savedIds.length}
+        currentUserRole={currentUser?.role || "student"}
         onChange={setTab}
         onSell={() => setSellOpen(true)}
       />
+
       <ListingModal
         item={selected}
         user={user}
         onClose={() => setSelected(null)}
         onContact={contactSeller}
+        onToggleSold={toggleSold}
       />
+
       <AuthModal
         visible={authOpen}
         onClose={() => setAuthOpen(false)}
         onSignIn={signInWithGoogle}
         error={authError}
       />
+
+      <LoginModal
+        visible={loginModalOpen}
+        students={students}
+        onClose={() => setLoginModalOpen(false)}
+        onLogin={handleRoleLogin}
+      />
+
       <SellModal
         visible={sellOpen}
         onClose={() => setSellOpen(false)}
@@ -289,11 +470,13 @@ export default function App() {
 function BottomNav({
   tab,
   savedCount,
+  currentUserRole,
   onChange,
   onSell,
 }: {
   tab: Tab;
   savedCount: number;
+  currentUserRole: "student" | "admin";
   onChange: (tab: Tab) => void;
   onSell: () => void;
 }) {
@@ -318,6 +501,21 @@ function BottomNav({
         active={tab === "Messages"}
         onPress={() => onChange("Messages")}
       />
+      {currentUserRole === "admin" ? (
+        <NavItem
+          label="Admin"
+          icon="🛡️"
+          active={tab === "AdminPanel"}
+          onPress={() => onChange("AdminPanel")}
+        />
+      ) : (
+        <NavItem
+          label="Portal"
+          icon="🎓"
+          active={tab === "StudentPanel"}
+          onPress={() => onChange("StudentPanel")}
+        />
+      )}
       <Pressable style={styles.sellButton} onPress={onSell}>
         <Text style={styles.sellPlus}>＋</Text>
         <Text style={styles.sellText}>Sell</Text>
@@ -325,6 +523,7 @@ function BottomNav({
     </View>
   );
 }
+
 function NavItem({
   label,
   icon,
@@ -352,16 +551,19 @@ function NavItem({
     </Pressable>
   );
 }
+
 function ListingModal({
   item,
   user,
   onClose,
   onContact,
+  onToggleSold,
 }: {
   item: Listing | null;
   user: User | null;
   onClose: () => void;
   onContact: () => void;
+  onToggleSold: (id: string) => void;
 }) {
   return (
     <Modal
@@ -378,20 +580,48 @@ function ListingModal({
               <Text style={styles.closeText}>×</Text>
             </Pressable>
             <View style={styles.detailBody}>
-              <Text style={styles.detailCategory}>
-                {item.category.toUpperCase()}
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.detailCategory}>
+                  {item.category.toUpperCase()}
+                </Text>
+                {item.isSold && (
+                  <View style={styles.soldBadgeInModal}>
+                    <Text style={styles.soldBadgeInModalText}>SOLD</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.detailTitle, item.isSold && styles.soldTitleText]}>
+                {item.title}
               </Text>
-              <Text style={styles.detailTitle}>{item.title}</Text>
-              <Text style={styles.detailPrice}>${item.price}</Text>
+              <Text style={[styles.detailPrice, item.isSold && styles.soldPriceText]}>
+                ${item.price}
+              </Text>
               <Text style={styles.muted}>
                 {item.condition} · {item.campus} · {item.seller}
               </Text>
               <Text style={styles.description}>{item.description}</Text>
+
+              {/* Action Buttons: Message + Mark as Sold */}
               <Pressable style={styles.primary} onPress={onContact}>
                 <Text style={styles.primaryText}>
-                  {user
-                    ? `Message ${item.seller}`
-                    : "Sign in to contact seller"}
+                  {`Message ${item.seller}`}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.soldToggleBtn,
+                  item.isSold && styles.soldToggleBtnActive,
+                ]}
+                onPress={() => onToggleSold(item.id)}
+              >
+                <Text
+                  style={[
+                    styles.soldToggleBtnText,
+                    item.isSold && styles.soldToggleBtnActiveText,
+                  ]}
+                >
+                  {item.isSold ? "✓ Item Marked as Sold (Click to Re-list)" : "🏷 Mark as Sold"}
                 </Text>
               </Pressable>
             </View>
@@ -401,6 +631,7 @@ function ListingModal({
     </Modal>
   );
 }
+
 function AuthModal({
   visible,
   onClose,
@@ -434,6 +665,7 @@ function AuthModal({
     </Modal>
   );
 }
+
 function SellModal({
   visible,
   onClose,
@@ -463,18 +695,22 @@ function SellModal({
             placeholder="e.g. Organic Chemistry textbook"
             style={styles.field}
           />
-          <Text style={styles.label}>Price</Text>
+          <Text style={styles.label}>Price ($)</Text>
           <TextInput
             value={price}
             onChangeText={setPrice}
             keyboardType="numeric"
-            placeholder="$ 0"
+            placeholder="0"
             style={styles.field}
           />
           <Pressable
             disabled={!title || !price}
             style={[styles.primary, (!title || !price) && styles.disabled]}
-            onPress={() => onSubmit(title, price, category)}
+            onPress={() => {
+              onSubmit(title, price, category);
+              setTitle("");
+              setPrice("");
+            }}
           >
             <Text style={styles.primaryText}>Publish listing</Text>
           </Pressable>
@@ -500,9 +736,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   navItem: { alignItems: "center", minWidth: 54 },
-  navIcon: { color: "#83918A", fontSize: 22 },
+  navIcon: { color: "#83918A", fontSize: 20 },
   navLabel: { color: "#83918A", fontSize: 10, marginTop: 3 },
-  navActive: { color: "#1D6B54" },
+  navActive: { color: "#1D6B54", fontWeight: "700" },
   badge: {
     position: "absolute",
     right: -12,
@@ -515,15 +751,15 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
   sellButton: {
-    height: 44,
-    borderRadius: 22,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: "#E6F0E6",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     gap: 4,
   },
-  sellPlus: { color: "#247055", fontSize: 20 },
+  sellPlus: { color: "#247055", fontSize: 18 },
   sellText: { color: "#247055", fontWeight: "800", fontSize: 12 },
   backdrop: {
     flex: 1,
@@ -535,6 +771,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: "hidden",
+    maxHeight: "90%",
   },
   detailImage: { width: "100%", height: 230 },
   close: {
@@ -550,6 +787,23 @@ const styles = StyleSheet.create({
   },
   closeText: { color: "#173C34", fontSize: 26 },
   detailBody: { padding: 24 },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  soldBadgeInModal: {
+    backgroundColor: "#C3535B",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  soldBadgeInModalText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
   detailCategory: {
     color: "#23775D",
     fontSize: 11,
@@ -558,32 +812,55 @@ const styles = StyleSheet.create({
   },
   detailTitle: {
     color: "#173C34",
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: "800",
     marginTop: 8,
   },
+  soldTitleText: { textDecorationLine: "line-through", color: "#87918C" },
   detailPrice: {
     color: "#1C7057",
     fontSize: 22,
     fontWeight: "800",
-    marginTop: 8,
+    marginTop: 6,
   },
-  muted: { color: "#87918C", fontSize: 12 },
+  soldPriceText: { color: "#87918C" },
+  muted: { color: "#87918C", fontSize: 12, marginTop: 4 },
   description: {
     color: "#66736D",
     fontSize: 14,
-    lineHeight: 21,
-    marginVertical: 20,
+    lineHeight: 20,
+    marginVertical: 16,
   },
   primary: {
-    height: 50,
+    height: 48,
     backgroundColor: "#1F5D4C",
-    borderRadius: 14,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 24,
+    marginTop: 10,
   },
   primaryText: { color: "#FFF", fontWeight: "800" },
+  soldToggleBtn: {
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#C3535B",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+    backgroundColor: "#FFF",
+  },
+  soldToggleBtnActive: {
+    backgroundColor: "#FDF1F2",
+  },
+  soldToggleBtnText: {
+    color: "#C3535B",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  soldToggleBtnActiveText: {
+    color: "#993B42",
+  },
   auth: { backgroundColor: "#FFF", borderRadius: 20, padding: 24, margin: 20 },
   form: {
     backgroundColor: "#FFF",
@@ -636,7 +913,7 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   field: {
-    height: 50,
+    height: 48,
     borderWidth: 1,
     borderColor: "#DDE4DC",
     borderRadius: 12,

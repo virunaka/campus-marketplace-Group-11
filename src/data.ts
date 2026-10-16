@@ -52,5 +52,6 @@ export const seedListings: Listing[] = [
     condition: "Good condition",
     image: "https://images.unsplash.com/photo-1551488831-00ddcb6c6bd3?w=800",
     description: "A warm, classic layer with a relaxed fit.",
+    isSold: true,
   },
 ];

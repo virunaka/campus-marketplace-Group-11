@@ -1,36 +1,46 @@
+import React from "react";
 import {
   FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { ListingCard } from "../components/ListingCard";
+import { PriceFilter, PriceRange } from "../components/PriceFilter";
+import { SearchBar } from "../components/SearchBar";
 import { categories } from "../data";
-import { Listing } from "../types";
+import { Listing, MockUser } from "../types";
 
 export function ExplorePage({
   items,
   query,
   category,
+  priceRange,
   savedIds,
+  currentUser,
   onQueryChange,
   onCategoryChange,
+  onPriceRangeChange,
   onSave,
   onOpen,
   onProfile,
+  onOpenRoleSwitch,
 }: {
   items: Listing[];
   query: string;
   category: string;
+  priceRange: PriceRange;
   savedIds: string[];
+  currentUser: MockUser | null;
   onQueryChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
+  onPriceRangeChange: (range: PriceRange) => void;
   onSave: (id: string) => void;
   onOpen: (item: Listing) => void;
   onProfile: () => void;
+  onOpenRoleSwitch: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -41,20 +51,29 @@ export function ExplorePage({
             Find your next{"\n"}favorite thing.
           </Text>
         </View>
-        <Pressable style={styles.avatar} onPress={onProfile}>
-          <Text style={styles.avatarText}>?</Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.avatar} onPress={onProfile}>
+            <Text style={styles.avatarText}>
+              {currentUser ? currentUser.name.charAt(0).toUpperCase() : "?"}
+            </Text>
+          </Pressable>
+          <Pressable style={styles.roleTag} onPress={onOpenRoleSwitch}>
+            <Text style={styles.roleTagText}>
+              {currentUser?.role === "admin"
+                ? "🛡️ Admin"
+                : `🎓 ${currentUser?.name.split(" ")[0] || "Student"}`} ▾
+            </Text>
+          </Pressable>
+        </View>
       </View>
-      <View style={styles.search}>
-        <Text style={styles.icon}>⌕</Text>
-        <TextInput
-          value={query}
-          onChangeText={onQueryChange}
-          placeholder="Search textbooks, desks, tech..."
-          placeholderTextColor="#87918C"
-          style={styles.input}
-        />
-      </View>
+
+      <SearchBar
+        value={query}
+        onChangeText={onQueryChange}
+        onClear={() => onQueryChange("")}
+        totalResults={items.length}
+      />
+
       <View style={styles.section}>
         <View>
           <Text style={styles.sectionTitle}>Browse near you</Text>
@@ -62,6 +81,7 @@ export function ExplorePage({
         </View>
         <Text style={styles.seeAll}>{items.length} items</Text>
       </View>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -87,6 +107,13 @@ export function ExplorePage({
           </Pressable>
         ))}
       </ScrollView>
+
+      {/* Price Filtering Component */}
+      <PriceFilter
+        selected={priceRange}
+        onSelect={onPriceRangeChange}
+      />
+
       <FlatList
         data={items}
         scrollEnabled={false}
@@ -95,7 +122,7 @@ export function ExplorePage({
         columnWrapperStyle={styles.columns}
         contentContainerStyle={styles.grid}
         ListEmptyComponent={
-          <Text style={styles.empty}>No items match your search yet.</Text>
+          <Text style={styles.empty}>No items match your search or filter yet.</Text>
         }
         renderItem={({ item }) => (
           <ListingCard
@@ -109,13 +136,19 @@ export function ExplorePage({
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 110 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: 28,
-    paddingBottom: 24,
+    paddingBottom: 20,
+    alignItems: "flex-start",
+  },
+  headerRight: {
+    alignItems: "flex-end",
+    gap: 6,
   },
   eyebrow: {
     color: "#65766D",
@@ -126,8 +159,8 @@ const styles = StyleSheet.create({
   },
   heading: {
     color: "#173C34",
-    fontSize: 30,
-    lineHeight: 34,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: "800",
   },
   avatar: {
@@ -138,40 +171,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: "#225347", fontWeight: "800" },
-  search: {
-    height: 52,
-    backgroundColor: "#FFF",
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
+  avatarText: { color: "#225347", fontWeight: "800", fontSize: 16 },
+  roleTag: {
+    backgroundColor: "#E2ECE5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E6E9E2",
+    borderColor: "#C5D8CB",
   },
-  icon: { color: "#49635A", fontSize: 28, marginRight: 8 },
-  input: { flex: 1, color: "#173C34", fontSize: 14 },
+  roleTagText: {
+    color: "#173C34",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   section: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    marginTop: 32,
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
     color: "#173C34",
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   muted: { color: "#87918C", fontSize: 12 },
   seeAll: { color: "#23775D", fontWeight: "700", fontSize: 12 },
-  categories: { gap: 8, paddingBottom: 22 },
+  categories: { gap: 8, paddingBottom: 10 },
   category: {
-    height: 36,
+    height: 34,
     justifyContent: "center",
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    borderRadius: 18,
     backgroundColor: "#ECEFE9",
   },
   activeCategory: { backgroundColor: "#1F5D4C" },
